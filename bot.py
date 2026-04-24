@@ -3,14 +3,15 @@ from telebot import types
 from datetime import datetime
 import sqlite3
 
-# بيانات وحيد ربعه
+# إعدادات النظام الملكي لـ (وحيد ربعه)
 TOKEN = "8691027108:AAE9_0t4Xko8qAO7NGs9OjlOnna90jX7_bw"
 ADMIN_ID = 8297381026
 bot = telebot.TeleBot(TOKEN)
-start_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+start_work_time = datetime.now().strftime("%Y-%m-%d %H:%M")
 
+# تجهيز قاعدة البيانات
 def init_db():
-    conn = sqlite3.connect('work_log.db', check_same_thread=False)
+    conn = sqlite3.connect('wahid_work.db', check_same_thread=False)
     cursor = conn.cursor()
     cursor.execute('''CREATE TABLE IF NOT EXISTS daily_log 
                       (id INTEGER PRIMARY KEY AUTOINCREMENT, type TEXT, plate TEXT, driver TEXT, details TEXT, time TEXT)''')
@@ -19,79 +20,95 @@ def init_db():
 
 db_conn = init_db()
 
+# لوحة التحكم الرئيسية (الأزرار)
 def main_keyboard():
     markup = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
     markup.add('🚛 تسجيل جرد', '🛠 تسجيل صيانة')
-    markup.add('📝 إضافة ملاحظة', '📊 عرض الجرد')
-    markup.add('🏁 تقرير نهاية الدوام', '⏰ وقت البدء')
+    markup.add('📝 إضافة ملاحظة', '📊 عرض الجرد اليومي')
+    markup.add('🏁 تقرير نهاية الدوام', '⏰ وقت بداية العمل')
     markup.add('🗑 مسح سجل اليوم', '🔙 حذف آخر إدخال')
     return markup
 
 @bot.message_handler(commands=['start'])
 def welcome(message):
     if message.from_user.id == ADMIN_ID:
-        msg = f"أهلاً بسيد الرجال، وحيد ربعه! 🦅🔥\nنظامك المتكامل جاهز ومزود بخيارات التعديل الذكي."
+        msg = (f"يا هلا بـ وحيد ربعه! 🦅🔥\n\n"
+               f"نظامك المتكامل جاهز لخدمتك في الميدان.\n"
+               f"استخدم الأزرار بالأسفل للإدارة، وللتعديل أرسل:\n"
+               f"(تعديل اللوحة القديمة - اللوحة الجديدة - الاسم)")
         bot.send_message(message.chat.id, msg, reply_markup=main_keyboard())
 
 @bot.message_handler(func=lambda m: True)
-def handle_ops(message):
+def handle_all(message):
     if message.from_user.id != ADMIN_ID: return
-    t = message.text
+    text = message.text
     now = datetime.now().strftime("%H:%M")
     cursor = db_conn.cursor()
 
-    # خيارات الأزرار الثابتة
-    if t == '🚛 تسجيل جرد':
-        bot.reply_to(message, "أرسل: اللوحة - اسم السائق")
-    elif t == '🛠 تسجيل صيانة':
-        bot.reply_to(message, "أرسل: صيانة - اللوحة - العطل")
-    elif t == '🗑 مسح سجل اليوم':
+    if text == '🚛 تسجيل جرد':
+        bot.reply_to(message, "أرسل البيانات كالتالي:\nاللوحة - اسم السائق\nمثال: 1234 - محمد")
+    
+    elif text == '🛠 تسجيل صيانة':
+        bot.reply_to(message, "أرسل بيانات الصيانة:\nصيانة - اللوحة - نوع العطل\nمثال: صيانة - 5566 - تغيير زيت")
+
+    elif text == '⏰ وقت بداية العمل':
+        bot.reply_to(message, f"🚀 بدأ العمل اليوم الساعة: {start_work_time}")
+
+    elif text == '🗑 مسح سجل اليوم':
         cursor.execute("DELETE FROM daily_log")
         db_conn.commit()
-        bot.reply_to(message, "⚠️ تم تصفير سجل اليوم بنجاح.")
-    elif t == '🔙 حذف آخر إدخال':
+        bot.reply_to(message, "⚠️ تم تصفير سجل اليوم بنجاح يا وحيد ربعه.")
+
+    elif text == '🔙 حذف آخر إدخال':
         cursor.execute("DELETE FROM daily_log WHERE id = (SELECT MAX(id) FROM daily_log)")
         db_conn.commit()
         bot.reply_to(message, "✅ تم حذف آخر عملية سجلتها.")
-    elif t == '📊 عرض الجرد':
+
+    elif text == '📊 عرض الجرد اليومي':
         cursor.execute("SELECT * FROM daily_log WHERE type='جرد'")
         rows = cursor.fetchall()
-        res = "📋 **الجرد الحالي:**\n" + "\n".join([f"🚛 {r[2]} | 👤 {r[3]} | 🕒 {r[5]}" for r in rows])
-        bot.send_message(message.chat.id, res if rows else "الجرد فارغ.")
-    elif t == '🏁 تقرير نهاية الدوام':
+        if not rows: bot.reply_to(message, "الجرد فارغ حالياً.")
+        else:
+            res = "📋 **جرد الشاحنات الحالي:**\n"
+            for r in rows: res += f"🚛 {r[2]} | 👤 {r[3]} | 🕒 {r[5]}\n"
+            bot.send_message(message.chat.id, res)
+
+    elif text == '🏁 تقرير نهاية الدوام':
         cursor.execute("SELECT * FROM daily_log")
         rows = cursor.fetchall()
-        if not rows: return bot.reply_to(message, "لا توجد بيانات.")
-        rep = f"📜 **حصاد اليوم لـ وحيد ربعه**\n------------------\n"
-        for r in rows: rep += f"🔹 [{r[1]}] {r[2]} {r[3]} {r[4]} | {r[5]}\n"
-        rep += f"------------------\n✅ تم بحمد الله."
-        bot.send_message(message.chat.id, rep)
+        if not rows: bot.reply_to(message, "لا توجد بيانات لتقرير اليوم.")
+        else:
+            report = f"📜 **تقرير نهاية الدوام لـ وحيد ربعه**\n"
+            report += f"📅 التاريخ: {datetime.now().strftime('%Y-%m-%d')}\n------------------\n"
+            for r in rows:
+                report += f"🔹 [{r[1]}] {r[2]} {r[3]} {r[4]} | {r[5]}\n"
+            report += "------------------\n✅ تم العمل بحمد الله."
+            bot.send_message(message.chat.id, report)
 
     # ميزة التعديل الذكي
-    elif t.startswith('تعديل'):
+    elif text.startswith('تعديل'):
         try:
-            new_data = t.replace('تعديل', '').strip()
-            if '-' in new_data:
-                p, d = new_data.split('-')
-                cursor.execute("UPDATE daily_log SET plate=?, driver=? WHERE id=(SELECT MAX(id) FROM daily_log AND type='جرد')", (p.strip(), d.strip()))
-                db_conn.commit()
-                bot.reply_to(message, f"✅ تم تعديل آخر سجل إلى: {p.strip()} - {d.strip()}")
-            else:
-                bot.reply_to(message, "أرسل التعديل بهذا الشكل: تعديل لوحة - اسم")
+            parts = text.split('-')
+            old_p = parts[0].replace('تعديل', '').strip()
+            new_p = parts[1].strip()
+            new_d = parts[2].strip()
+            cursor.execute("UPDATE daily_log SET plate=?, driver=? WHERE plate=? AND type='جرد'", (new_p, new_d, old_p))
+            db_conn.commit()
+            bot.reply_to(message, f"✅ تم التعديل بنجاح!\nمن: {old_p}\nإلى: {new_p} - {new_d}")
         except:
-            bot.reply_to(message, "حدث خطأ في التعديل.")
+            bot.reply_to(message, "⚠️ خطأ! اكتب: تعديل اللوحة القديمة - اللوحة الجديدة - الاسم")
 
-    # التسجيل العادي
+    # التسجيل والحفظ
     else:
-        if '-' in t:
-            parts = t.split('-')
-            if 'صيانة' in t:
-                cursor.execute("INSERT INTO daily_log (type, plate, driver, details, time) VALUES (?,?,?,?,?)", ('صيانة', parts[1].strip(), '', parts[2].strip(), now))
+        if '-' in text:
+            p = text.split('-')
+            if 'صيانة' in text:
+                cursor.execute("INSERT INTO daily_log (type, plate, driver, details, time) VALUES (?,?,?,?,?)", ('صيانة', p[1].strip(), '', p[2].strip(), now))
             else:
-                cursor.execute("INSERT INTO daily_log (type, plate, driver, details, time) VALUES (?,?,?,?,?)", ('جرد', parts[0].strip(), parts[1].strip(), '', now))
-            bot.reply_to(message, "✅ تم الحفظ.")
+                cursor.execute("INSERT INTO daily_log (type, plate, driver, details, time) VALUES (?,?,?,?,?)", ('جرد', p[0].strip(), p[1].strip(), '', now))
+            bot.reply_to(message, "✅ تم التسجيل بنجاح.")
         else:
-            cursor.execute("INSERT INTO daily_log (type, plate, driver, details, time) VALUES (?,?,?,?,?)", ('ملاحظة', '', '', t, now))
+            cursor.execute("INSERT INTO daily_log (type, plate, driver, details, time) VALUES (?,?,?,?,?)", ('ملاحظة', '', '', text, now))
             bot.reply_to(message, "✅ تم حفظ الملاحظة.")
         db_conn.commit()
 
